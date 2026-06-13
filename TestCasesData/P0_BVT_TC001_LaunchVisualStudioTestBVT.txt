@@ -1,0 +1,18 @@
+Test Case ID: TC001
+Title: Launch Visual Studio
+Feature: Shell
+Priority: P0
+Automation Name: LaunchVisualStudioTestBVT
+Classification: BVT
+
+Test Data:
+  (uses default configuration)
+
+Expected Result:
+  - Visual Studio shell becomes ready
+
+Test Steps:
+  1. Launch devenv.exe
+     Expected: Start window appears
+  2. Wait for the shell to be ready
+     Expected: Menu bar or start window is visible

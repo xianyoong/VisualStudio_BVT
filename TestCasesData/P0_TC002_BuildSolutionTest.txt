@@ -1,0 +1,19 @@
+Test Case ID: TC002
+Title: Build the solution
+Feature: Build
+Priority: P0
+Automation Name: BuildSolutionTest
+Classification: Functional
+
+Test Data:
+  (uses default configuration)
+
+Expected Result:
+  - Build succeeded
+
+Test Steps:
+  1. Click "Create a new project" button
+  2. Select ListItem "Console App"
+     Expected: "Console App" ListItem is highlighted/selected
+  3. Click "Next" button
+     Expected: The "Configure your new project" page is shown

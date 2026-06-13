@@ -1,0 +1,21 @@
+{
+  "Servers": {
+    "Default": {
+      "Host": "http://127.0.0.1:4723/",
+      "Type": "WinAppDriver"
+    }
+  },
+  "Apps": {
+    "Default": {
+      "Path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe",
+      "Name": "Visual Studio 2022"
+    }
+  },
+  "Users": {
+    "Default": {
+      "Username": "ChangeMe-User",
+      "Domain": "",
+      "Password": "ChangeMe-Password"
+    }
+  }
+}

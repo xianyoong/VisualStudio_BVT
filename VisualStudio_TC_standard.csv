@@ -1,0 +1,13 @@
+TC_ID,Automation_Name,Status,Feature,Title,Priority,Category,User_Config,Step_No,Action,Dataset,Expected_Result,Notes,Reserved1,Reserved2,Module_Ref,Module_Count
+1,LaunchVisualStudioTestBVT,Active,Shell,Launch Visual Studio,P0,Smoke,Default,,,,Visual Studio shell becomes ready,,,,,
+1,,,,,,,,1,Launch devenv.exe,,Start window appears,,,,,
+1,,,,,,,,2,Wait for the shell to be ready,,Menu bar or start window is visible,,,,,
+2,BuildSolutionTest,Active,Build,Build the solution,P0,Functional,Default,,,,Build succeeded,,,,,
+2,,,,,,,,1,"Click  ""Create a new project"" button",SolutionPath,,,,,,
+2,,,,,,,,2,"Select ListItem ""Console App""",,"""Console App"" ListItem is highlighted/selected",,,,,
+,,,,,,,,3,"Click ""Next"" button",,"The ""Configure your new project"" page is shown",,,,,
+,,,,,,,,4,"Click ""Next"" button",,"The ""Additional information"" page is shown",,,,,
+,,,,,,,,5,Select the last item in the Framework dropdown  ,,The bottom framework option is selected,,,,,
+,,,,,,,,6,"Click ""Create"" button",,,,,,,
+,,,,,,,,7,"Click  MenuItem ""Build """,,,,,,,
+,,,,,,,,7,"Select  MenuItem ""Build Solution""",,,,,,,

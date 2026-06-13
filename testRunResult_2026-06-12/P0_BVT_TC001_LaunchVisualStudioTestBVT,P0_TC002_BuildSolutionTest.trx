@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="aa772f87-d97d-46c9-9a9a-fee485919315" name="v-txianyoong@DESKTOP-2GPMM7M 2026-06-12 23:31:01" runUser="REDMOND\v-txianyoong" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-06-12T23:31:01.3565258+08:00" queuing="2026-06-12T23:31:01.3565261+08:00" start="2026-06-12T23:31:00.8268125+08:00" finish="2026-06-12T23:31:01.3568247+08:00" />
+  <TestSettings name="default" id="68aaa0de-e16b-495b-83a7-b8de372fba86">
+    <Deployment runDeploymentRoot="v-txianyoong_DESKTOP-2GPMM7M_2026-06-12_23_31_01" />
+  </TestSettings>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="0" executed="0" passed="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.28)&#xD;
+[xUnit.net 00:00:00.06]   Discovering: VisualStudioTests&#xD;
+[xUnit.net 00:00:00.08]   Discovered:  VisualStudioTests&#xD;
+[xUnit.net 00:00:00.09]   Starting:    VisualStudioTests&#xD;
+[xUnit.net 00:00:00.10]   Finished:    VisualStudioTests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="DESKTOP-2GPMM7M" outcome="Warning" timestamp="2026-06-12T23:31:01.3084023+08:00">
+        <Text>No test matches the given testcase filter `FullyQualifiedName~LaunchVisualStudioTestBVT,P0BuildSolutionTest` in C:\Users\v-txianyoong\VisualStudioTests\bin\Debug\net8.0\VisualStudioTests.dll</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
