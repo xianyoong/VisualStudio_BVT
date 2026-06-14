@@ -33,8 +33,7 @@ public sealed class BVT_Test : IDisposable
         var cfg = ConfigGlobal.Instance;
         string host = ResolveDriverUrl(cfg.DefaultServer().Host);
         _host = host;
-        string appPath = Environment.GetEnvironmentVariable("VS_APP_PATH")
-                         ?? (string.IsNullOrWhiteSpace(cfg.DefaultApp().Path) ? DefaultDevenvPath : cfg.DefaultApp().Path);
+        string appPath = ResolveDevenvPath(cfg.DefaultApp().Path);
 
         var options = new AppiumOptions();
         options.AddAdditionalCapability("app", appPath);
@@ -146,6 +145,120 @@ public sealed class BVT_Test : IDisposable
             return configuredHost;
         }
         return DefaultWinAppDriverUrl;
+    }
+
+    /// <summary>
+    /// Resolve the path to devenv.exe for ANY installed Visual Studio edition
+    /// (Community / Professional / Enterprise / BuildTools) and version (2019, 2022, ...).
+    /// Resolution order (first existing wins):
+    ///   1. VS_APP_PATH environment variable (explicit override).
+    ///   2. config_global.json (Apps:Default:Path) — only if the file actually exists.
+    ///   3. vswhere.exe — the official Visual Studio locator shipped with VS Installer.
+    ///   4. A filesystem scan of the standard install roots.
+    ///   5. The hard-coded DefaultDevenvPath (last resort).
+    /// </summary>
+    private static string ResolveDevenvPath(string configuredPath)
+    {
+        // 1. Explicit override via environment variable.
+        var envPath = Environment.GetEnvironmentVariable("VS_APP_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+            return envPath;
+
+        // 2. config_global.json — honor it only when the path actually exists on this machine.
+        if (!string.IsNullOrWhiteSpace(configuredPath) && File.Exists(configuredPath))
+            return configuredPath;
+
+        // 3. vswhere.exe — the canonical way to locate any VS install.
+        var viaVsWhere = FindDevenvViaVsWhere();
+        if (viaVsWhere != null)
+            return viaVsWhere;
+
+        // 4. Filesystem scan across editions/versions/Program Files roots.
+        var viaScan = FindDevenvViaScan();
+        if (viaScan != null)
+            return viaScan;
+
+        // 5. Last resort — return the default (session creation will fail clearly if missing).
+        return DefaultDevenvPath;
+    }
+
+    /// <summary>
+    /// Query vswhere.exe (installed at a fixed location with the VS Installer) for the
+    /// path to devenv.exe. Returns null if vswhere is absent or finds nothing.
+    /// </summary>
+    private static string? FindDevenvViaVsWhere()
+    {
+        string vsWhere = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Microsoft Visual Studio", "Installer", "vswhere.exe");
+        if (!File.Exists(vsWhere))
+            return null;
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = vsWhere,
+                // -latest: newest version; -prerelease: include Preview;
+                // -products *: any edition incl. BuildTools; -property productPath: full devenv.exe path.
+                Arguments = "-latest -prerelease -products * -property productPath",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null)
+                return null;
+            string output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit(10000);
+
+            // productPath can point at devenv.exe directly; accept it if it exists.
+            if (!string.IsNullOrWhiteSpace(output) && File.Exists(output))
+                return output;
+        }
+        catch
+        {
+            // vswhere failed — fall through to the filesystem scan.
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Scan the standard Visual Studio install roots for any devenv.exe, preferring the
+    /// newest version/edition found. Covers 32/64-bit Program Files locations.
+    /// </summary>
+    private static string? FindDevenvViaScan()
+    {
+        var roots = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        };
+
+        var candidates = new List<string>();
+        foreach (var root in roots.Distinct())
+        {
+            if (string.IsNullOrEmpty(root))
+                continue;
+            string vsRoot = Path.Combine(root, "Microsoft Visual Studio");
+            if (!Directory.Exists(vsRoot))
+                continue;
+            try
+            {
+                // e.g. ...\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.exe
+                candidates.AddRange(Directory.EnumerateFiles(
+                    vsRoot, "devenv.exe", SearchOption.AllDirectories));
+            }
+            catch
+            {
+                // ignore folders we can't read
+            }
+        }
+
+        // Prefer the highest path (newest year folder like "2022" sorts after "2019").
+        return candidates
+            .OrderByDescending(p => p, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     public void Dispose()
