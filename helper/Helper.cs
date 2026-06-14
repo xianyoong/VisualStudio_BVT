@@ -217,6 +217,67 @@ public sealed class Helper
         => SelectFromDropdownByPosition(comboName, -1);
 
     /// <summary>
+    /// Version-agnostic framework picker for the "Additional information" page. Different VS
+    /// versions offer different frameworks (e.g. VS 2026 lists ".NET 8.0" and ".NET 10.0" but no
+    /// ".NET 9.0"), so hard-coding a single string is brittle. This opens the Framework combo,
+    /// enumerates whatever options are actually present, then selects the FIRST option whose text
+    /// contains any of the supplied preferences (in order). If none match, it leaves the default
+    /// selection untouched (closes the dropdown) so project creation can still proceed.
+    /// Returns the text of the option that ended up selected.
+    /// </summary>
+    /// <param name="comboName">Combo name/substring, e.g. "Framework" (matches "_Framework").</param>
+    /// <param name="preferredContains">Ordered preferences, e.g. ".NET 8.0", ".NET 10.0".</param>
+    public string SelectFrameworkOrDefault(string comboName, params string[] preferredContains)
+    {
+        // Open the combo (its Name is "_Framework"; contains() matches the "Framework" substring).
+        ClickXPath($"//ComboBox[@Name='{comboName}' or contains(@Name,'{comboName}')]");
+
+        // Enumerate the actual list items shown in the dropdown popup.
+        var options = _wait.Until(_ =>
+        {
+            var found = _session.FindElementsByXPath("//ComboBox//ListItem | //ListItem");
+            return found.Count > 0 ? found : null;
+        })!;
+
+        Console.WriteLine($"Framework dropdown '{comboName}' offers {options.Count} option(s):");
+        foreach (var o in options)
+            Console.WriteLine($"  - \"{o.Text}\"");
+
+        // Pick the first option matching the earliest preference that exists.
+        foreach (var pref in preferredContains)
+        {
+            var hit = options.FirstOrDefault(o =>
+                o.Text.IndexOf(pref, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (hit != null)
+            {
+                Console.WriteLine($"Selecting framework \"{hit.Text}\" (matched preference \"{pref}\").");
+                hit.Click();
+                return hit.Text;
+            }
+        }
+
+        // No preference matched — keep the current default. Close the dropdown via Escape so we
+        // don't accidentally change the selection, then report what was already selected.
+        string defaultText = options.FirstOrDefault()?.Text ?? string.Empty;
+        try
+        {
+            var selected = options.FirstOrDefault(o =>
+            {
+                var attr = o.GetAttribute("SelectionItemPattern.IsSelected") ?? o.GetAttribute("IsSelected");
+                return string.Equals(attr, "True", StringComparison.OrdinalIgnoreCase);
+            });
+            if (selected != null)
+                defaultText = selected.Text;
+        }
+        catch { /* attribute not available on this build */ }
+
+        Console.WriteLine($"No preferred framework found; keeping default \"{defaultText}\".");
+        new OpenQA.Selenium.Interactions.Actions(_session)
+            .SendKeys(OpenQA.Selenium.Keys.Escape).Perform();
+        return defaultText;
+    }
+
+    /// <summary>
     /// After clicking "Create", verify the New Project wizard completed. VS opens the IDE in a
     /// SEPARATE top-level window, and a WinAppDriver session is bound to the window it launched
     /// against — so the original session cannot see Solution Explorer in the new IDE window.

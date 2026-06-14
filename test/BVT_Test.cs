@@ -93,7 +93,10 @@ public sealed class BVT_Test : IDisposable
                 _helper.ClickButton("Next");
 
                 // Step 5: choose the target framework on the "Additional information" page.
-                _helper.SelectFromDropdown("Framework", ".NET 9.0 (Standard Term Support)");
+                // Version-agnostic: pick the first framework that actually exists (different VS
+                // versions offer different sets — e.g. VS 2026 has .NET 8.0 and .NET 10.0 but no 9.0).
+                _helper.SelectFrameworkOrDefault("Framework",
+                    ".NET 8.0", ".NET 10.0", ".NET 9.0", ".NET 6.0", ".NET");
 
                 // Step 6: create the project.
                 _helper.ClickButton("Create");
