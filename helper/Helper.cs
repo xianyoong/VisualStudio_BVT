@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Runtime.InteropServices;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Appium.Windows;
@@ -254,55 +255,151 @@ public sealed class Helper
     /// <summary>The underlying WinAppDriver session (exposed so fixtures can dispose child sessions).</summary>
     public WindowsDriver<WindowsElement> Session => _session;
 
+    // ---- Win32 interop: distinguish the real IDE window from the VSSplash screen ----
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+
+    private static string GetWindowClass(IntPtr hWnd)
+    {
+        var sb = new System.Text.StringBuilder(256);
+        GetClassName(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    private static string GetWindowTitle(IntPtr hWnd)
+    {
+        var sb = new System.Text.StringBuilder(512);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Enumerate every top-level window owned by any running devenv.exe process and return the
+    /// first real one: VISIBLE, with a non-empty title, and NOT the transient splash screen
+    /// (ClassName="VSSplash"). This is more reliable than Process.MainWindowHandle, which can
+    /// momentarily point at the splash while both windows exist.
+    /// </summary>
+    private static IntPtr FindRealVsWindow()
+    {
+        var devenvPids = new HashSet<uint>(
+            System.Diagnostics.Process.GetProcessesByName("devenv").Select(p => (uint)p.Id));
+        if (devenvPids.Count == 0)
+            return IntPtr.Zero;
+
+        IntPtr match = IntPtr.Zero;
+        EnumWindows((hWnd, _) =>
+        {
+            if (!IsWindowVisible(hWnd))
+                return true; // keep enumerating
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (!devenvPids.Contains(pid))
+                return true;
+            if (GetWindowClass(hWnd).Equals("VSSplash", StringComparison.OrdinalIgnoreCase))
+                return true; // skip the splash
+            if (string.IsNullOrWhiteSpace(GetWindowTitle(hWnd)))
+                return true; // skip title-less helper windows
+            match = hWnd;
+            return false; // found it -> stop enumerating
+        }, IntPtr.Zero);
+
+        return match;
+    }
+
+    /// <summary>
+    /// Poll until devenv.exe exposes a real, visible main window that is NOT the transient splash
+    /// screen (ClassName="VSSplash"), then return that window's native handle. Visual Studio shows
+    /// the splash first; a WinAppDriver session bound to it dies with "Currently selected window
+    /// has been closed" once the splash disappears — so we must wait for the start/IDE window
+    /// before attaching.
+    /// </summary>
+    private static IntPtr WaitForVsMainWindow(int waitSeconds)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            IntPtr h = FindRealVsWindow();
+            if (h != IntPtr.Zero)
+            {
+                Console.WriteLine($"VS main window ready: \"{GetWindowTitle(h)}\" " +
+                                  $"(class {GetWindowClass(h)}, handle {h}).");
+                return h;
+            }
+            Thread.Sleep(1000);
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>Re-root a WinAppDriver session on an existing top-level window handle.</summary>
+    private static Helper AttachByHandle(string host, IntPtr handle)
+    {
+        string handleHex = handle.ToInt64().ToString("x");
+        var options = new AppiumOptions();
+        options.AddAdditionalCapability("appTopLevelWindow", handleHex);
+        options.AddAdditionalCapability("deviceName", "WindowsPC");
+        var driver = new WindowsDriver<WindowsElement>(new Uri(host), options, TimeSpan.FromMinutes(2));
+        driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(5);
+        return new Helper(driver);
+    }
+
+    /// <summary>
+    /// Launch Visual Studio (devenv.exe) and attach a session to its real start/IDE window — the
+    /// reliable way to drive VS with WinAppDriver. Binding a session directly to the launched app
+    /// attaches to the VSSplash screen, which then closes; instead we start the process ourselves
+    /// and re-attach AFTER the splash clears (see WaitForVsMainWindow).
+    /// </summary>
+    public static Helper LaunchAndAttach(string host, string appPath, int waitSeconds = 120)
+    {
+        if (!File.Exists(appPath))
+            throw new FileNotFoundException(
+                $"Visual Studio (devenv.exe) not found at: '{appPath}'. " +
+                "Install Visual Studio or set VS_APP_PATH / config_global.json to a valid devenv.exe.");
+
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = appPath,
+            UseShellExecute = true,
+        });
+
+        IntPtr handle = WaitForVsMainWindow(waitSeconds);
+        if (handle == IntPtr.Zero)
+            throw new InvalidOperationException(
+                "Visual Studio launched but its main window (past the splash screen) never appeared.");
+
+        return AttachByHandle(host, handle);
+    }
+
     /// <summary>
     /// Attach a NEW session to the main Visual Studio IDE window that opens AFTER the New Project
     /// wizard. A WinAppDriver session is bound to the window it was created against; once VS swaps
     /// the start window for the IDE window, a fresh session rooted on the IDE window's handle is
-    /// required to drive its menus/panes ("build and run").
-    ///
-    /// The window handle is resolved DIRECTLY from the devenv.exe process (Process.MainWindowHandle)
-    /// rather than by traversing the desktop tree with a WinAppDriver "Root" session — the desktop
-    /// XPath traversal is slow and was timing out the HTTP request. Polls until devenv exposes a
-    /// non-zero main-window handle (the IDE finishes loading the new solution).
+    /// required to drive its menus/panes ("build and run"). The window is located by its native
+    /// handle (skipping the VSSplash screen) rather than by traversing the desktop tree.
     /// </summary>
     /// <param name="host">WinAppDriver endpoint, e.g. http://127.0.0.1:4723/.</param>
     /// <param name="windowTitleContains">Unused now; kept for call-site compatibility/logging.</param>
     public static Helper AttachToTopLevelWindow(string host, string windowTitleContains, int waitSeconds = 90)
     {
-        IntPtr handle = IntPtr.Zero;
-        var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
-        while (DateTime.UtcNow < deadline)
-        {
-            // The IDE window belongs to the running devenv.exe; take the one with a real main window.
-            var proc = System.Diagnostics.Process.GetProcessesByName("devenv")
-                .FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
-            if (proc != null)
-            {
-                proc.Refresh();
-                if (proc.MainWindowHandle != IntPtr.Zero
-                    && proc.MainWindowTitle.IndexOf("Visual Studio", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    handle = proc.MainWindowHandle;
-                    Console.WriteLine($"Attaching to IDE window: \"{proc.MainWindowTitle}\" (handle {handle}).");
-                    break;
-                }
-            }
-            Thread.Sleep(1000);
-        }
-
+        IntPtr handle = WaitForVsMainWindow(waitSeconds);
         if (handle == IntPtr.Zero)
             throw new InvalidOperationException(
                 "Could not find the Visual Studio IDE window (devenv.exe main window) to attach to.");
 
-        // Re-root a session on that window via its native handle (decimal -> hex).
-        string handleHex = handle.ToInt64().ToString("x");
-
-        var ideOptions = new AppiumOptions();
-        ideOptions.AddAdditionalCapability("appTopLevelWindow", handleHex);
-        ideOptions.AddAdditionalCapability("deviceName", "WindowsPC");
-        var ide = new WindowsDriver<WindowsElement>(new Uri(host), ideOptions, TimeSpan.FromMinutes(1));
-        ide.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(5);
-        return new Helper(ide);
+        return AttachByHandle(host, handle);
     }
 
     /// <summary>Open the Output tool window (View &gt; Output). STUB locators.</summary>

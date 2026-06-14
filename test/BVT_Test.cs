@@ -35,14 +35,12 @@ public sealed class BVT_Test : IDisposable
         _host = host;
         string appPath = ResolveDevenvPath(cfg.DefaultApp().Path);
 
-        var options = new AppiumOptions();
-        options.AddAdditionalCapability("app", appPath);
-        options.AddAdditionalCapability("deviceName", "WindowsPC");
-
-        // VS is slow to launch — allow a long command timeout for session creation.
-        _session = new WindowsDriver<WindowsElement>(new Uri(host), options, TimeSpan.FromMinutes(3));
-        _session.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(5);
-        _helper = new Helper(_session);
+        // Launch VS ourselves and attach AFTER the splash screen (VSSplash) closes. Binding a
+        // session directly to the launched app attaches to the splash window, which then closes
+        // ("Currently selected window has been closed"). LaunchAndAttach re-roots on the real
+        // start/IDE window once it appears.
+        _helper = Helper.LaunchAndAttach(host, appPath);
+        _session = _helper.Session;
     }
 
     /// <summary>
